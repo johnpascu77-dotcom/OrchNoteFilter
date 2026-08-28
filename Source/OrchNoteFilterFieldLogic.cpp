@@ -147,7 +147,15 @@ namespace onft
             {
                 const int base = inField ? note
                                          : snapToField(note, config, config.constrainDirection);
-                return { true, applyScaleDegreeShift(base, fieldPCs, config.scaleDegreeShift) };
+                int out = applyScaleDegreeShift(base, fieldPCs, config.scaleDegreeShift);
+
+                if (config.avoidNote >= 0 && out == config.avoidNote)
+                {
+                    const int step = config.constrainDirection == ConstrainDirection::Down ? -1 : 1;
+                    out = applyScaleDegreeShift(out, fieldPCs, step);
+                }
+
+                return { true, out };
             }
 
             case ForeignMode::Solo:

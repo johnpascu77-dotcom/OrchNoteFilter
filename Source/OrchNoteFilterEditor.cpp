@@ -36,8 +36,8 @@ OrchNoteFilterAudioProcessorEditor::OrchNoteFilterAudioProcessorEditor (OrchNote
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
     setResizable (true, true);
-    setResizeLimits (600, 520, 1100, 900);
-    setSize (720, 620);
+    setResizeLimits (600, 560, 1100, 940);
+    setSize (720, 664);
 
     auto& params = audioProcessor.getParameters();
 
@@ -137,6 +137,11 @@ OrchNoteFilterAudioProcessorEditor::OrchNoteFilterAudioProcessorEditor (OrchNote
     styleSlider (shiftSlider);
     addAndMakeVisible (shiftSlider);
     shiftAttachment = std::make_unique<SliderAttachment> (params, "scaleDegreeShift", shiftSlider);
+
+    avoidSnapRepeatsButton.setButtonText ("Avoid Snap Repeats (Constrain)");
+    avoidSnapRepeatsButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
+    addAndMakeVisible (avoidSnapRepeatsButton);
+    avoidSnapRepeatsAttachment = std::make_unique<ButtonAttachment> (params, "avoidSnapRepeats", avoidSnapRepeatsButton);
 
     probabilityLabel.setText ("Probability", juce::dontSendNotification);
     styleLabel (probabilityLabel, 13.0f, true);
@@ -271,6 +276,8 @@ void OrchNoteFilterAudioProcessorEditor::resized()
         shiftLabel.setBounds (row.removeFromLeft (150));
         shiftSlider.setBounds (row.removeFromLeft (row.getWidth()));
     }
+    area.removeFromTop (4);
+    avoidSnapRepeatsButton.setBounds (area.removeFromTop (24).removeFromLeft (280));
     area.removeFromTop (6);
     {
         auto row = area.removeFromTop (28);
@@ -315,32 +322,35 @@ void OrchNoteFilterAudioProcessorEditor::timerCallback()
 
 void OrchNoteFilterAudioProcessorEditor::updateStatus()
 {
-    const int in = audioProcessor.getLastInputNoteForUi();
-    const int out = audioProcessor.getLastOutputNoteForUi();
-    const int action = audioProcessor.getLastActionForUi();
+    const int in = audioProcessor.getLastPerfInputNoteForUi();
+    const int out = audioProcessor.getLastPerfOutputNoteForUi();
+    const int action = audioProcessor.getLastPerfActionForUi();
 
     const char* actionText = action == 1 ? "passed"
                            : action == 2 ? "field"
                            : action == 3 ? "DROPPED"
-                           : action == 4 ? "keyswitch"
                            : "-";
 
     juce::String text;
     if (in >= 0)
     {
-        text << "In " << in << " -> ";
-        text << (action == 3 ? juce::String ("(dropped)") : juce::String (out));
-        text << "  |  " << actionText;
+        text << "Perf: In " << in << " -> "
+             << (action == 3 ? juce::String ("(dropped)") : juce::String (out))
+             << "  " << actionText;
     }
     else
     {
-        text << "No notes yet";
+        text << "Perf: no notes yet";
     }
 
+    const int ksIn = audioProcessor.getLastKsInputNoteForUi();
+    if (ksIn >= 0)
+        text << "   |   KS: In " << ksIn << " -> " << audioProcessor.getLastKsOutputNoteForUi();
+
     if (audioProcessor.isCcControlActiveForUi())
-        text << "  |  CC control: last CC" << audioProcessor.getLastControlCcForUi();
+        text << "   |   CC: last CC" << audioProcessor.getLastControlCcForUi();
     else if (audioProcessor.getParameters().getRawParameterValue ("ccControlEnable")->load() >= 0.5f)
-        text << "  |  CC control armed";
+        text << "   |   CC armed";
 
     statusLabel.setText (text, juce::dontSendNotification);
 }

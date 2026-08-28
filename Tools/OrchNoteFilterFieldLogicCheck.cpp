@@ -117,6 +117,22 @@ int main()
         checkNote (onft::resolveNote (60, c).outputNote, 48, "shift -7: C60 -> C48");
     }
 
+    // Avoid-snap-repeats: two different inputs that would both land on D62.
+    {
+        auto c = cMajor();
+        c.foreignMode = onft::ForeignMode::Constrain;
+        c.constrainDirection = onft::ConstrainDirection::Nearest;
+
+        // C#61 -> C60, D#63 -> D62 or E64. Force the collision case: avoidNote
+        // says "don't repeat 60", so C#61 must move off C60.
+        c.avoidNote = 60;
+        check (onft::resolveNote (61, c).outputNote != 60,
+               "avoidNote: C#61 does not repeat C60");
+
+        c.avoidNote = -1;
+        checkNote (onft::resolveNote (61, c).outputNote, 60, "avoidNote off: C#61 -> C60 as usual");
+    }
+
     // Whole-tone field, shift is even-spaced.
     {
         onft::FieldConfig wt;

@@ -45,9 +45,11 @@ public:
     void applyFieldPresetFromUI (int presetIndex);
 
     // UI status readouts (message thread; plain int reads).
-    int getLastInputNoteForUi() const { return lastInputNote.load(); }
-    int getLastOutputNoteForUi() const { return lastOutputNote.load(); }
-    int getLastActionForUi() const { return lastAction.load(); } // 0 none, 1 passed, 2 shifted/constrained, 3 dropped, 4 keyswitch
+    int getLastPerfInputNoteForUi() const { return lastPerfInputNote.load(); }
+    int getLastPerfOutputNoteForUi() const { return lastPerfOutputNote.load(); }
+    int getLastPerfActionForUi() const { return lastPerfAction.load(); } // 0 none, 1 passed, 2 field, 3 dropped
+    int getLastKsInputNoteForUi() const { return lastKsInputNote.load(); }
+    int getLastKsOutputNoteForUi() const { return lastKsOutputNote.load(); }
     bool isCcControlActiveForUi() const;
     int getLastControlCcForUi() const { return lastControlCc.load(); }
 
@@ -61,6 +63,7 @@ private:
     std::atomic<float>* foreignModeParam = nullptr;
     std::atomic<float>* constrainDirectionParam = nullptr;
     std::atomic<float>* scaleDegreeShiftParam = nullptr;
+    std::atomic<float>* avoidSnapRepeatsParam = nullptr;
     std::atomic<float>* probabilityParam = nullptr;
     std::atomic<float>* passKeyswitchesParam = nullptr;
     std::atomic<float>* keyswitchMinParam = nullptr;
@@ -84,13 +87,20 @@ private:
     std::array<std::atomic<bool>, 12> ccFieldMask { };
     std::atomic<bool> ccFieldMaskValid { false };
 
-    std::atomic<int> lastInputNote { -1 };
-    std::atomic<int> lastOutputNote { -1 };
-    std::atomic<int> lastAction { 0 };
+    std::atomic<int> lastPerfInputNote { -1 };
+    std::atomic<int> lastPerfOutputNote { -1 };
+    std::atomic<int> lastPerfAction { 0 };
+    std::atomic<int> lastKsInputNote { -1 };
+    std::atomic<int> lastKsOutputNote { -1 };
     std::atomic<int> lastControlCc { -1 };
 
     // -1 untracked, -2 note-on was dropped, >=0 remembered output note.
     std::array<std::array<int, 128>, 16> activeNoteMap { };
+
+    // Per-channel last performance note in / out, for the "avoid snap repeats"
+    // guard (Constrain mode).
+    std::array<int, 16> lastSourceNotePerChannel { };
+    std::array<int, 16> lastEmittedNotePerChannel { };
 
     onft::FieldConfig buildFieldConfig() const;
     int effectiveProbability() const;

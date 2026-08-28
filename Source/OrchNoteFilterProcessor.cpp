@@ -62,6 +62,7 @@ OrchNoteFilterAudioProcessor::OrchNoteFilterAudioProcessor()
     foreignModeParam = parameters.getRawParameterValue ("foreignMode");
     constrainDirectionParam = parameters.getRawParameterValue ("constrainDirection");
     scaleDegreeShiftParam = parameters.getRawParameterValue ("scaleDegreeShift");
+    avoidSnapRepeatsParam = parameters.getRawParameterValue ("avoidSnapRepeats");
     probabilityParam = parameters.getRawParameterValue ("probability");
     passKeyswitchesParam = parameters.getRawParameterValue ("passKeyswitches");
     keyswitchMinParam = parameters.getRawParameterValue ("keyswitchMin");
@@ -118,6 +119,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchNoteFilterAudioProcessor
 
     params.push_back (std::make_unique<juce::AudioParameterInt>(
         juce::ParameterID { "scaleDegreeShift", 1 }, "Scale Degree Shift", -12, 12, 0));
+
+    params.push_back (std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "avoidSnapRepeats", 1 }, "Avoid Snap Repeats", true));
 
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "probability", 1 }, "Probability",
@@ -180,6 +184,9 @@ void OrchNoteFilterAudioProcessor::resetNoteMap()
 {
     for (auto& channel : activeNoteMap)
         channel.fill (kNoteUntracked);
+
+    lastSourceNotePerChannel.fill (-1);
+    lastEmittedNotePerChannel.fill (-1);
 }
 
 int OrchNoteFilterAudioProcessor::effectiveProbability() const
@@ -291,20 +298,25 @@ void OrchNoteFilterAudioProcessor::handleNoteOn (const juce::MidiMessage& messag
     const auto ch = static_cast<size_t> (channel - 1);
     const auto in = static_cast<size_t> (inputNote);
 
-    lastInputNote.store (inputNote);
-
-    auto passUnchanged = [&] (int action)
+    auto emitPerf = [&] (int outNote, int action)
     {
-        activeNoteMap[ch][in] = inputNote;
-        output.addEvent (message, samplePosition);
-        lastOutputNote.store (inputNote);
-        lastAction.store (action);
+        activeNoteMap[ch][in] = outNote;
+        if (outNote == inputNote)
+            output.addEvent (message, samplePosition);
+        else
+            output.addEvent (juce::MidiMessage::noteOn (channel, outNote, message.getVelocity()), samplePosition);
+
+        lastPerfInputNote.store (inputNote);
+        lastPerfOutputNote.store (outNote);
+        lastPerfAction.store (action);
+        lastSourceNotePerChannel[ch] = inputNote;
+        lastEmittedNotePerChannel[ch] = outNote;
     };
 
     const bool enabled = enableParam != nullptr && enableParam->load() >= 0.5f;
     if (! enabled)
     {
-        passUnchanged (1);
+        emitPerf (inputNote, 1);
         return;
     }
 
@@ -316,7 +328,10 @@ void OrchNoteFilterAudioProcessor::handleNoteOn (const juce::MidiMessage& messag
 
     if (passKs && inputNote >= ksMin && inputNote <= ksMax)
     {
-        passUnchanged (4);
+        activeNoteMap[ch][in] = inputNote;
+        output.addEvent (message, samplePosition);
+        lastKsInputNote.store (inputNote);
+        lastKsOutputNote.store (inputNote);
         return;
     }
 
@@ -326,26 +341,38 @@ void OrchNoteFilterAudioProcessor::handleNoteOn (const juce::MidiMessage& messag
 
     if (! processThisNote)
     {
-        passUnchanged (1);
+        emitPerf (inputNote, 1);
         return;
     }
 
-    const auto config = buildFieldConfig();
+    auto config = buildFieldConfig();
+
+    const bool avoidRepeats = avoidSnapRepeatsParam != nullptr && avoidSnapRepeatsParam->load() >= 0.5f;
+    if (avoidRepeats && inputNote != lastSourceNotePerChannel[ch])
+        config.avoidNote = lastEmittedNotePerChannel[ch];
+
     const auto result = onft::resolveNote (inputNote, config);
+
+    // Record the source even when the note is dropped, so "input differs" stays
+    // meaningful against the previous *sounding* note.
+    lastSourceNotePerChannel[ch] = inputNote;
 
     if (! result.play)
     {
         activeNoteMap[ch][in] = kNoteDropped;
-        lastOutputNote.store (-1);
-        lastAction.store (3);
+        lastPerfInputNote.store (inputNote);
+        lastPerfOutputNote.store (-1);
+        lastPerfAction.store (3);
         return;
     }
 
     const int outNote = juce::jlimit (0, 127, result.outputNote);
     activeNoteMap[ch][in] = outNote;
     output.addEvent (juce::MidiMessage::noteOn (channel, outNote, message.getVelocity()), samplePosition);
-    lastOutputNote.store (outNote);
-    lastAction.store (outNote == inputNote ? 1 : 2);
+    lastPerfInputNote.store (inputNote);
+    lastPerfOutputNote.store (outNote);
+    lastPerfAction.store (outNote == inputNote ? 1 : 2);
+    lastEmittedNotePerChannel[ch] = outNote;
 }
 
 void OrchNoteFilterAudioProcessor::handleNoteOff (const juce::MidiMessage& message, int samplePosition, juce::MidiBuffer& output)

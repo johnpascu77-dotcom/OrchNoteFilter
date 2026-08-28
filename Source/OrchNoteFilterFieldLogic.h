@@ -33,6 +33,12 @@ namespace onft
         ForeignMode foreignMode = ForeignMode::Constrain;
         ConstrainDirection constrainDirection = ConstrainDirection::Nearest;
         int scaleDegreeShift = 0;        // steps through the ordered field list
+
+        // Constrain only: if the resolved output equals avoidNote (a pitch the
+        // caller wants not repeated - typically the last note emitted on this
+        // channel), step one field degree further so the constrained line keeps
+        // moving instead of hammering one pitch. -1 disables.
+        int avoidNote = -1;
     };
 
     struct FieldResult
