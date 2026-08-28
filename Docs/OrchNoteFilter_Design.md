@@ -120,13 +120,28 @@ State: XML via `copyXmlToBinary`, same as OrchGate.
 ## 11. Out of scope for Phase 1A
 
 Field morphing (probability-weighted A→B transition), OrchFieldConductor (the global companion),
-per-note-history "avoid repeats", chord-tone weighting, microtonal / non-12-EDO. All noted in the
-roadmap; none block Phase 1A.
+chord-tone weighting, microtonal / non-12-EDO. All noted in the roadmap; none block Phase 1A.
 
-## 12. Endgame
+## 12. Endgame — DONE (OrchConductor side, 2026-08-29)
 
-Once the field is CC-selectable: OrchConductor's narrative lane points gain a `pitchField`;
-OrchConductor emits CC105 alongside CC20-54, driven by the same `Narrative Position`. One automation
-lane evolves orchestration + density + harmonic field together. Later still: MC emits the pitch
-classes its MotifEngine is actually writing, so the Randomize wash tracks the structural voices
-automatically.
+- The **field-preset list is append-only** — indices are now saved-project + narrative-lane data
+  (`NarrativeLanePointDefinition::pitchFieldIndex` in OrchConductor). Never reorder or remove; add
+  new fields only at the end, and bump OrchConductor's `maxPitchFieldIndex` to match.
+- OrchConductor emits **CC105** (its `Field Select CC` param, default 105) when a narrative lane
+  point carrying a `pitchFieldIndex` becomes active — driven by the same `Narrative Position` that
+  drives orchestration. `value = round(index / 14 * 127)`; OrchNoteFilter's CC105 handler decodes
+  it back to a preset index. Example library `organic_build` now walks pentatonic → whole-tone →
+  octatonic → Dorian → major → chromatic.
+- So: one automation lane evolves orchestration + density + harmonic field together.
+
+Still open: MC emitting the pitch classes its MotifEngine is actually writing, so the Randomize
+wash tracks the structural voices automatically (MC-side, not scheduled).
+
+## 13. Phase 1B additions (2026-08-29)
+
+- **Avoid Snap Repeats** (default on) — Constrain only: if a *different* input note would snap to
+  the same output pitch as the last note emitted on that channel, it steps one field degree
+  further. Keeps a constrained line moving; genuine repeated source notes are preserved (the guard
+  only fires when the input note actually changed).
+- **Split status readout** — performance notes and keyswitch notes shown separately, so the
+  constant keyswitch-clip traffic no longer masks what the field is doing to the musical notes.
