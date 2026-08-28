@@ -32,6 +32,7 @@ target_sources(OrchNoteFilter
     PRIVATE
         Source/OrchNoteFilterProcessor.cpp
         Source/OrchNoteFilterEditor.cpp
+        Source/OrchNoteFilterFieldLogic.cpp
 )
 
 target_compile_definitions(OrchNoteFilter
