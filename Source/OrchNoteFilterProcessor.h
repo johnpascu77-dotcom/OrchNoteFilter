@@ -120,6 +120,11 @@ private:
     std::array<int, 16> lastSourceNotePerChannel { };
     std::array<int, 16> lastEmittedNotePerChannel { };
 
+    // Broadcast motif mask arrives as two CCs (baseCc = low 7 pitch classes,
+    // baseCc+1 = high 5); latch each half so either CC can rebuild the toggles.
+    int maskLowBits { 0 };
+    int maskHighBits { 0 };
+
     // Field Morph: when the field mask changes, blend old -> new over N note-ons
     // (ramping probability) instead of switching hard on the next note.
     std::array<bool, 12> lastSeenFieldMask { };

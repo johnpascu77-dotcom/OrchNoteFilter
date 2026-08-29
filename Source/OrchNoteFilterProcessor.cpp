@@ -166,7 +166,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchNoteFilterAudioProcessor
     // class (>= 64 = on). 0 = off. Lets MC broadcast the exact pitch classes its
     // MotifEngine is writing so the wash tracks the structural voices.
     params.push_back (std::make_unique<juce::AudioParameterInt>(
-        juce::ParameterID { "ccMaskBaseNumber", 1 }, "CC# Mask Base (0 = off)", 0, 116, 110));
+        juce::ParameterID { "ccMaskBaseNumber", 1 }, "CC# Mask Base (0 = off)", 0, 118, 110));
 
     return { params.begin(), params.end() };
 }
@@ -264,7 +264,7 @@ void OrchNoteFilterAudioProcessor::handleControlCc (const juce::MidiMessage& mes
     const int ccModeN = readNum (ccModeNumberParam, 108);
     const int ccProbN = readNum (ccProbabilityNumberParam, 109);
     const int ccPresetN = readNum (ccFieldPresetNumberParam, 105);
-    const int ccMaskBase = juce::jlimit (0, 116, readNum (ccMaskBaseNumberParam, 110));
+    const int ccMaskBase = juce::jlimit (0, 118, readNum (ccMaskBaseNumberParam, 110));
 
     const auto setInt = [] (juce::AudioParameterInt* p, int target)
     {
@@ -318,17 +318,34 @@ void OrchNoteFilterAudioProcessor::handleControlCc (const juce::MidiMessage& mes
         }
         matched = true;
     }
-    else if (ccMaskBase != 0 && cc >= ccMaskBase && cc <= ccMaskBase + 11)
+    else if (ccMaskBase != 0 && (cc == ccMaskBase || cc == ccMaskBase + 1))
     {
-        // One pitch class of a broadcast motif mask.
-        const int pcIndex = cc - ccMaskBase;
-        const bool want = value >= 64;
+        // Broadcast motif mask: a 12-bit pitch-class set packed into two CCs -
+        // baseCc = pitch classes 0-6 (low 7 bits), baseCc+1 = 7-11 (high 5).
+        // A one-CC-per-class block would collide with CC120/CC121 (All Sound
+        // Off / Reset All Controllers). Latch each half, rebuild the 12 toggles.
+        if (cc == ccMaskBase)
+            maskLowBits = value & 0x7F;
+        else
+            maskHighBits = value & 0x1F;
 
-        if (auto* p = pcBools[static_cast<size_t> (pcIndex)]; p != nullptr && p->get() != want)
+        const int mask12 = (maskLowBits & 0x7F) | ((maskHighBits & 0x1F) << 7);
+
+        bool anyChanged = false;
+        for (int i = 0; i < 12; ++i)
         {
-            *p = want;
-            setChoice (fieldPresetChoice, 0); // the mask defines the field, not a named preset
+            auto* p = pcBools[static_cast<size_t> (i)];
+            const bool want = (mask12 & (1 << i)) != 0;
+            if (p != nullptr && p->get() != want)
+            {
+                *p = want;
+                anyChanged = true;
+            }
         }
+
+        if (anyChanged)
+            setChoice (fieldPresetChoice, 0); // the mask defines the field, not a named preset
+
         matched = true;
     }
 

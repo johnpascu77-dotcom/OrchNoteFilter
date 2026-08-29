@@ -151,19 +151,22 @@ wash tracks the structural voices automatically (MC-side, not scheduled).
 
 ## 14. Motif pitch-class mask — receiving side (2026-08-29)
 
-- **`CC# Mask Base`** parameter (default 110, 0 = off): 12 consecutive CCs from that base, one per
-  pitch class, `>= 64` = on. Each writes the matching toggle and drops Field Preset to "Custom".
-  Gated by CC Control; same channel filter as the other CCs.
+- **`CC# Mask Base`** parameter (default 110, 0 = off): the 12-bit pitch-class mask arrives as **two
+  CCs** — `Base` carries pitch classes 0-6 (low 7 bits), `Base+1` carries 7-11 (high 5 bits). Either
+  CC rebuilds all 12 toggles (each half is latched) and drops Field Preset to "Custom". Gated by CC
+  Control; same channel filter as the other CCs. *(Was one-CC-per-class 110-121 until 2026-08-29 —
+  that block ran into CC120/CC121 = All Sound Off / Reset All Controllers, which hard-muted every
+  downstream synth on any mask change touching B♭ or B.)*
 - The **sending side** is Composer Mastermind's *pitch-field broadcast*: every bar MC computes the
   union of pitch classes its structural voices (the MPLs) are currently sounding — each registered
   instance's active-pattern step content (from `InstancePatternCache`) shifted by that pattern's
-  tracked transpose — and emits it as CC 110-121 on a configured channel, only when the mask
+  tracked transpose — and emits it as the two packed CCs on a configured channel, only when the mask
   changes. Enable via the `set_pitch_field_broadcast` MCP action / `setPitchFieldBroadcast` bridge
   request (session-level, not persisted).
-- So an OrchNoteFilter with `CC# Mask Base = 110` and CC Control on constrains its wash to the
+- So an OrchNoteFilter with `CC# Mask Base` matching MC's Base CC and CC Control on constrains its wash to the
   composition's own live harmony. Set Foreign Notes to **Filter** for the emergent-rhythm version,
   **Constrain** for dense lock, **Solo** for a section that diverges against the subject.
 - **Not yet applied on the MC side**: pattern inversion / M7 (they change the pitch-class set;
   transpose is the dominant shift and is applied). A documented refinement.
-- **Conflict**: don't wire both OrchConductor's `pitchFieldIndex` CC105 path *and* MC's CC110-121
-  mask into the same OrchNoteFilter — pick one field authority per instance.
+- **Conflict**: don't wire both OrchConductor's `pitchFieldIndex` CC105 path *and* MC's packed mask
+  into the same OrchNoteFilter — pick one field authority per instance.

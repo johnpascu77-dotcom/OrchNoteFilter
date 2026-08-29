@@ -189,7 +189,7 @@ OrchNoteFilterAudioProcessorEditor::OrchNoteFilterAudioProcessorEditor (OrchNote
     addAndMakeVisible (ksMaxSlider);
     ksMaxAttachment = std::make_unique<SliderAttachment> (params, "keyswitchMax", ksMaxSlider);
 
-    ccControlButton.setButtonText ("CC Control (105 preset / 106 root / 107 shift / 108 mode / 109 prob / 110-121 motif mask)");
+    ccControlButton.setButtonText ("CC Control (105 preset / 106 root / 107 shift / 108 mode / 109 prob / Base+Base+1 motif mask)");
     ccControlButton.setColour (juce::ToggleButton::textColourId, juce::Colour::fromRGB (205, 220, 230));
     addAndMakeVisible (ccControlButton);
     ccControlAttachment = std::make_unique<ButtonAttachment> (params, "ccControlEnable", ccControlButton);
