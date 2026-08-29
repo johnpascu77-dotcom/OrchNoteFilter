@@ -63,6 +63,7 @@ OrchNoteFilterAudioProcessor::OrchNoteFilterAudioProcessor()
     constrainDirectionParam = parameters.getRawParameterValue ("constrainDirection");
     scaleDegreeShiftParam = parameters.getRawParameterValue ("scaleDegreeShift");
     avoidSnapRepeatsParam = parameters.getRawParameterValue ("avoidSnapRepeats");
+    fieldMorphNotesParam = parameters.getRawParameterValue ("fieldMorphNotes");
     probabilityParam = parameters.getRawParameterValue ("probability");
     passKeyswitchesParam = parameters.getRawParameterValue ("passKeyswitches");
     keyswitchMinParam = parameters.getRawParameterValue ("keyswitchMin");
@@ -132,6 +133,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchNoteFilterAudioProcessor
 
     params.push_back (std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID { "avoidSnapRepeats", 1 }, "Avoid Snap Repeats", true));
+
+    params.push_back (std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID { "fieldMorphNotes", 1 }, "Field Morph (notes)", 0, 128, 0));
 
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "probability", 1 }, "Probability",
@@ -203,6 +207,9 @@ void OrchNoteFilterAudioProcessor::resetNoteMap()
 
     lastSourceNotePerChannel.fill (-1);
     lastEmittedNotePerChannel.fill (-1);
+
+    lastSeenFieldValid = false;
+    morphNotesRemaining = 0;
 }
 
 int OrchNoteFilterAudioProcessor::effectiveProbability() const
@@ -234,6 +241,13 @@ onft::FieldConfig OrchNoteFilterAudioProcessor::buildFieldConfig() const
     config.scaleDegreeShift = scaleDegreeShiftParam != nullptr
         ? juce::jlimit (-12, 12, juce::roundToInt (scaleDegreeShiftParam->load())) : 0;
 
+    return config;
+}
+
+onft::FieldConfig OrchNoteFilterAudioProcessor::buildFieldConfigWithMask (const std::array<bool, 12>& mask) const
+{
+    auto config = buildFieldConfig();
+    config.pitchClassAllowed = mask;
     return config;
 }
 
@@ -381,7 +395,50 @@ void OrchNoteFilterAudioProcessor::handleNoteOn (const juce::MidiMessage& messag
         return;
     }
 
-    auto config = buildFieldConfig();
+    // Read the current field mask and detect a change since the last note.
+    std::array<bool, 12> currentMask { };
+    for (int i = 0; i < 12; ++i)
+        currentMask[static_cast<size_t> (i)] =
+            pcParams[static_cast<size_t> (i)] != nullptr && pcParams[static_cast<size_t> (i)]->load() >= 0.5f;
+
+    if (! lastSeenFieldValid)
+    {
+        lastSeenFieldMask = currentMask;
+        lastSeenFieldValid = true;
+    }
+    else if (currentMask != lastSeenFieldMask)
+    {
+        const int morphNotes = fieldMorphNotesParam != nullptr
+            ? juce::jlimit (0, 128, juce::roundToInt (fieldMorphNotesParam->load())) : 0;
+
+        if (morphNotes > 0)
+        {
+            // Keep the pre-change field as the "from" side; if a morph is
+            // already running, retarget without resetting its origin.
+            if (morphNotesRemaining <= 0)
+                morphFromFieldMask = lastSeenFieldMask;
+
+            morphNotesRemaining = morphNotes;
+            morphNotesTotal = morphNotes;
+        }
+
+        lastSeenFieldMask = currentMask;
+    }
+
+    onft::FieldConfig config;
+
+    if (morphNotesRemaining > 0)
+    {
+        const float progress = 1.0f - static_cast<float> (morphNotesRemaining)
+                                    / static_cast<float> (juce::jmax (1, morphNotesTotal));
+        const bool useNew = random.nextFloat() < progress;
+        config = buildFieldConfigWithMask (useNew ? currentMask : morphFromFieldMask);
+        --morphNotesRemaining;
+    }
+    else
+    {
+        config = buildFieldConfigWithMask (currentMask);
+    }
 
     const bool avoidRepeats = avoidSnapRepeatsParam != nullptr && avoidSnapRepeatsParam->load() >= 0.5f;
     if (avoidRepeats && inputNote != lastSourceNotePerChannel[ch])

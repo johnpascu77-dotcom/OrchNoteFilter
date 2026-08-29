@@ -36,8 +36,8 @@ OrchNoteFilterAudioProcessorEditor::OrchNoteFilterAudioProcessorEditor (OrchNote
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
     setResizable (true, true);
-    setResizeLimits (600, 560, 1100, 940);
-    setSize (720, 664);
+    setResizeLimits (600, 590, 1100, 980);
+    setSize (720, 700);
 
     auto& params = audioProcessor.getParameters();
 
@@ -142,6 +142,19 @@ OrchNoteFilterAudioProcessorEditor::OrchNoteFilterAudioProcessorEditor (OrchNote
     avoidSnapRepeatsButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
     addAndMakeVisible (avoidSnapRepeatsButton);
     avoidSnapRepeatsAttachment = std::make_unique<ButtonAttachment> (params, "avoidSnapRepeats", avoidSnapRepeatsButton);
+
+    fieldMorphLabel.setText ("Field Morph (notes)", juce::dontSendNotification);
+    styleLabel (fieldMorphLabel, 13.0f, true);
+    addAndMakeVisible (fieldMorphLabel);
+    fieldMorphSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    fieldMorphSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 22);
+    fieldMorphSlider.textFromValueFunction = [] (double v)
+    {
+        return juce::roundToInt (v) == 0 ? juce::String ("off") : juce::String (juce::roundToInt (v));
+    };
+    styleSlider (fieldMorphSlider);
+    addAndMakeVisible (fieldMorphSlider);
+    fieldMorphAttachment = std::make_unique<SliderAttachment> (params, "fieldMorphNotes", fieldMorphSlider);
 
     probabilityLabel.setText ("Probability", juce::dontSendNotification);
     styleLabel (probabilityLabel, 13.0f, true);
@@ -278,6 +291,12 @@ void OrchNoteFilterAudioProcessorEditor::resized()
     }
     area.removeFromTop (4);
     avoidSnapRepeatsButton.setBounds (area.removeFromTop (24).removeFromLeft (280));
+    area.removeFromTop (4);
+    {
+        auto row = area.removeFromTop (26);
+        fieldMorphLabel.setBounds (row.removeFromLeft (150));
+        fieldMorphSlider.setBounds (row.removeFromLeft (row.getWidth()));
+    }
     area.removeFromTop (6);
     {
         auto row = area.removeFromTop (28);

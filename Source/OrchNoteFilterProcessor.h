@@ -65,6 +65,7 @@ private:
     std::atomic<float>* constrainDirectionParam = nullptr;
     std::atomic<float>* scaleDegreeShiftParam = nullptr;
     std::atomic<float>* avoidSnapRepeatsParam = nullptr;
+    std::atomic<float>* fieldMorphNotesParam = nullptr;
     std::atomic<float>* probabilityParam = nullptr;
     std::atomic<float>* passKeyswitchesParam = nullptr;
     std::atomic<float>* keyswitchMinParam = nullptr;
@@ -108,7 +109,16 @@ private:
     std::array<int, 16> lastSourceNotePerChannel { };
     std::array<int, 16> lastEmittedNotePerChannel { };
 
+    // Field Morph: when the field mask changes, blend old -> new over N note-ons
+    // (ramping probability) instead of switching hard on the next note.
+    std::array<bool, 12> lastSeenFieldMask { };
+    bool lastSeenFieldValid { false };
+    std::array<bool, 12> morphFromFieldMask { };
+    int morphNotesRemaining { 0 };
+    int morphNotesTotal { 0 };
+
     onft::FieldConfig buildFieldConfig() const;
+    onft::FieldConfig buildFieldConfigWithMask (const std::array<bool, 12>& mask) const;
     int effectiveProbability() const;
 
     void resetNoteMap();
