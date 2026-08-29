@@ -1,11 +1,10 @@
 #include "OrchNoteFilterProcessor.h"
 #include "OrchNoteFilterEditor.h"
 
+#include <algorithm>
+
 namespace
 {
-    constexpr int kNoteUntracked = -1;
-    constexpr int kNoteDropped = -2;
-
     // Field-preset masks, authored as if Root == C. Index order must match
     // getFieldPresetNames() (offset by 1 - index 0 there is "Custom").
     struct NamedField { const char* name; std::array<bool, 12> mask; };
@@ -202,8 +201,7 @@ bool OrchNoteFilterAudioProcessor::isBusesLayoutSupported (const BusesLayout&) c
 
 void OrchNoteFilterAudioProcessor::resetNoteMap()
 {
-    for (auto& channel : activeNoteMap)
-        channel.fill (kNoteUntracked);
+    activeNotes.clear();
 
     lastSourceNotePerChannel.fill (-1);
     lastEmittedNotePerChannel.fill (-1);
@@ -346,11 +344,20 @@ void OrchNoteFilterAudioProcessor::handleNoteOn (const juce::MidiMessage& messag
     const int channel = juce::jlimit (1, 16, message.getChannel());
     const int inputNote = juce::jlimit (0, 127, message.getNoteNumber());
     const auto ch = static_cast<size_t> (channel - 1);
-    const auto in = static_cast<size_t> (inputNote);
+
+    auto trackNote = [&] (int outNote)
+    {
+        // Soft cap - a runaway feeder that never sends note-offs shouldn't grow
+        // this without bound. Drop the oldest; its note-off (if it ever comes)
+        // then falls through to the untracked pass-through path.
+        if (activeNotes.size() >= 2048)
+            activeNotes.erase (activeNotes.begin());
+        activeNotes.push_back ({ channel, inputNote, outNote });
+    };
 
     auto emitPerf = [&] (int outNote, int action)
     {
-        activeNoteMap[ch][in] = outNote;
+        trackNote (outNote);
         if (outNote == inputNote)
             output.addEvent (message, samplePosition);
         else
@@ -378,7 +385,7 @@ void OrchNoteFilterAudioProcessor::handleNoteOn (const juce::MidiMessage& messag
 
     if (passKs && inputNote >= ksMin && inputNote <= ksMax)
     {
-        activeNoteMap[ch][in] = inputNote;
+        trackNote (inputNote);
         output.addEvent (message, samplePosition);
         lastKsInputNote.store (inputNote);
         lastKsOutputNote.store (inputNote);
@@ -452,7 +459,7 @@ void OrchNoteFilterAudioProcessor::handleNoteOn (const juce::MidiMessage& messag
 
     if (! result.play)
     {
-        activeNoteMap[ch][in] = kNoteDropped;
+        trackNote (-1); // note-on dropped; its note-off will be consumed
         lastPerfInputNote.store (inputNote);
         lastPerfOutputNote.store (-1);
         lastPerfAction.store (3);
@@ -460,7 +467,7 @@ void OrchNoteFilterAudioProcessor::handleNoteOn (const juce::MidiMessage& messag
     }
 
     const int outNote = juce::jlimit (0, 127, result.outputNote);
-    activeNoteMap[ch][in] = outNote;
+    trackNote (outNote);
     output.addEvent (juce::MidiMessage::noteOn (channel, outNote, message.getVelocity()), samplePosition);
     lastPerfInputNote.store (inputNote);
     lastPerfOutputNote.store (outNote);
@@ -472,23 +479,31 @@ void OrchNoteFilterAudioProcessor::handleNoteOff (const juce::MidiMessage& messa
 {
     const int channel = juce::jlimit (1, 16, message.getChannel());
     const int inputNote = juce::jlimit (0, 127, message.getNoteNumber());
-    const auto ch = static_cast<size_t> (channel - 1);
-    const auto in = static_cast<size_t> (inputNote);
 
-    const int remembered = activeNoteMap[ch][in];
-    activeNoteMap[ch][in] = kNoteUntracked;
+    // Match the oldest still-sounding note-on for this (channel, input note).
+    // FIFO pairing: several identical inputs can be live at once (the wash
+    // feeder collapses distinct pitches), and each carries the output pitch it
+    // was born with - so a note's off always releases the pitch it started.
+    const auto it = std::find_if (activeNotes.begin(), activeNotes.end(),
+        [&] (const TrackedNote& n) { return n.channel == channel && n.inputNote == inputNote; });
 
-    if (remembered == kNoteDropped)
-        return; // matching note-on was dropped; consume the note-off
-
-    if (remembered >= 0)
+    if (it == activeNotes.end())
     {
-        output.addEvent (juce::MidiMessage::noteOff (channel, remembered, message.getVelocity()), samplePosition);
+        // Untracked: pass through unchanged (avoid a stuck note if inserted mid-hold).
+        output.addEvent (message, samplePosition);
         return;
     }
 
-    // Untracked: pass through unchanged (avoid a stuck note if inserted mid-hold).
-    output.addEvent (message, samplePosition);
+    const int outputNote = it->outputNote;
+    activeNotes.erase (it);
+
+    if (outputNote < 0)
+        return; // matching note-on was dropped; consume the note-off
+
+    if (outputNote == inputNote)
+        output.addEvent (message, samplePosition);
+    else
+        output.addEvent (juce::MidiMessage::noteOff (channel, outputNote, message.getVelocity()), samplePosition);
 }
 
 void OrchNoteFilterAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)

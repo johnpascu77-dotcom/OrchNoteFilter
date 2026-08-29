@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <vector>
 #include <JuceHeader.h>
 
 #include "OrchNoteFilterFieldLogic.h"
@@ -101,8 +102,18 @@ private:
     std::atomic<int> lastKsOutputNote { -1 };
     std::atomic<int> lastControlCc { -1 };
 
-    // -1 untracked, -2 note-on was dropped, >=0 remembered output note.
-    std::array<std::array<int, 128>, 16> activeNoteMap { };
+    // One entry per sounding note-on that passed through. A list, not a slot
+    // per (channel, input note): the wash source produces overlapping identical
+    // input notes (the +6 Randomize collapses distinct MPL pitches onto one
+    // value), so several can be live for the same (channel, input) at once and
+    // each needs its own remembered output for a correctly-paired note-off.
+    struct TrackedNote
+    {
+        int channel = 0;      // 1..16
+        int inputNote = 0;    // 0..127
+        int outputNote = -1;  // emitted pitch, or -1 if this note-on was dropped
+    };
+    std::vector<TrackedNote> activeNotes;
 
     // Per-channel last performance note in / out, for the "avoid snap repeats"
     // guard (Constrain mode).
