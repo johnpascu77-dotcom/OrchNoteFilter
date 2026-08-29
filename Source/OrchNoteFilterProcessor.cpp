@@ -96,6 +96,7 @@ OrchNoteFilterAudioProcessor::OrchNoteFilterAudioProcessor()
     ccModeNumberParam = parameters.getRawParameterValue ("ccModeNumber");
     ccProbabilityNumberParam = parameters.getRawParameterValue ("ccProbabilityNumber");
     ccFieldPresetNumberParam = parameters.getRawParameterValue ("ccFieldPresetNumber");
+    ccFieldWidthNumberParam = parameters.getRawParameterValue ("ccFieldWidthNumber");
     ccMaskBaseNumberParam = parameters.getRawParameterValue ("ccMaskBaseNumber");
 
     fieldPresetChoice = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("fieldPreset"));
@@ -103,6 +104,7 @@ OrchNoteFilterAudioProcessor::OrchNoteFilterAudioProcessor()
     foreignModeChoice = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("foreignMode"));
     scaleDegreeShiftInt = dynamic_cast<juce::AudioParameterInt*> (parameters.getParameter ("scaleDegreeShift"));
     probabilityFloat = dynamic_cast<juce::AudioParameterFloat*> (parameters.getParameter ("probability"));
+    fieldWidthFloat = dynamic_cast<juce::AudioParameterFloat*> (parameters.getParameter ("fieldWidth"));
     for (int i = 0; i < 12; ++i)
         pcBools[static_cast<size_t> (i)] =
             dynamic_cast<juce::AudioParameterBool*> (parameters.getParameter ("pc" + juce::String (i)));
@@ -123,22 +125,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchNoteFilterAudioProcessor
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
+    // Order matters: Bitwig's automatic remote-control pages take parameters in
+    // declaration order, 8 per page. The "character" controls a user actually
+    // reaches for lead; the 12 pitch-class toggles (usually driven by preset or
+    // the broadcast mask, not by hand) and the CC-config numbers come after.
+
     params.push_back (std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID { "enable", 1 }, "Enable", true));
 
     params.push_back (std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { "fieldPreset", 1 }, "Field Preset", getFieldPresetNames(), 1)); // Chromatic
-
-    const std::array<const char*, 12> pcNames {
-        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-    for (int i = 0; i < 12; ++i)
-        params.push_back (std::make_unique<juce::AudioParameterBool>(
-            juce::ParameterID { "pc" + juce::String (i), 1 },
-            juce::String ("PC ") + pcNames[static_cast<size_t> (i)],
-            true));
-
-    params.push_back (std::make_unique<juce::AudioParameterInt>(
-        juce::ParameterID { "fieldRoot", 1 }, "Field Root", 0, 11, 0));
 
     params.push_back (std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { "foreignMode", 1 }, "Foreign Note Mode",
@@ -150,13 +146,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchNoteFilterAudioProcessor
         juce::StringArray { "Nearest", "Up", "Down" }, 0));
 
     params.push_back (std::make_unique<juce::AudioParameterInt>(
-        juce::ParameterID { "scaleDegreeShift", 1 }, "Scale Degree Shift", -12, 12, 0));
-
-    params.push_back (std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID { "avoidSnapRepeats", 1 }, "Avoid Snap Repeats", true));
+        juce::ParameterID { "fieldRoot", 1 }, "Field Root", 0, 11, 0));
 
     params.push_back (std::make_unique<juce::AudioParameterInt>(
-        juce::ParameterID { "fieldMorphNotes", 1 }, "Field Morph (notes)", 0, 128, 0));
+        juce::ParameterID { "scaleDegreeShift", 1 }, "Scale Degree Shift", -12, 12, 0));
 
     // Field Width: 0 = use the field exactly, 1 = widen it to the nearest
     // whole scale, in between = that fraction of the scale's extra notes.
@@ -164,9 +157,23 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchNoteFilterAudioProcessor
         juce::ParameterID { "fieldWidth", 1 }, "Field Width",
         juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.0f));
 
+    params.push_back (std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID { "fieldMorphNotes", 1 }, "Field Morph (notes)", 0, 128, 0));
+
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "probability", 1 }, "Probability",
         juce::NormalisableRange<float> (0.0f, 100.0f, 1.0f), 100.0f));
+
+    params.push_back (std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "avoidSnapRepeats", 1 }, "Avoid Snap Repeats", true));
+
+    const std::array<const char*, 12> pcNames {
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    for (int i = 0; i < 12; ++i)
+        params.push_back (std::make_unique<juce::AudioParameterBool>(
+            juce::ParameterID { "pc" + juce::String (i), 1 },
+            juce::String ("PC ") + pcNames[static_cast<size_t> (i)],
+            true));
 
     params.push_back (std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID { "passKeyswitches", 1 }, "Pass Keyswitches", true));
@@ -189,9 +196,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchNoteFilterAudioProcessor
         juce::ParameterID { "ccModeNumber", 1 }, "CC# Mode", 0, 127, 108));
     params.push_back (std::make_unique<juce::AudioParameterInt>(
         juce::ParameterID { "ccProbabilityNumber", 1 }, "CC# Probability", 0, 127, 109));
+    params.push_back (std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID { "ccFieldWidthNumber", 1 }, "CC# Field Width", 0, 127, 112));
 
-    // Motif pitch-class mask: 12 consecutive CCs from this base, one per pitch
-    // class (>= 64 = on). 0 = off. Lets MC broadcast the exact pitch classes its
+    // Motif pitch-class mask: two CCs from this base (base = pitch classes 0-6,
+    // base+1 = 7-11). 0 = off. Lets MC broadcast the exact pitch classes its
     // MotifEngine is writing so the wash tracks the structural voices.
     params.push_back (std::make_unique<juce::AudioParameterInt>(
         juce::ParameterID { "ccMaskBaseNumber", 1 }, "CC# Mask Base (0 = off)", 0, 118, 110));
@@ -310,6 +319,7 @@ void OrchNoteFilterAudioProcessor::handleControlCc (const juce::MidiMessage& mes
     const int ccModeN = readNum (ccModeNumberParam, 108);
     const int ccProbN = readNum (ccProbabilityNumberParam, 109);
     const int ccPresetN = readNum (ccFieldPresetNumberParam, 105);
+    const int ccWidthN = readNum (ccFieldWidthNumberParam, 112);
     const int ccMaskBase = juce::jlimit (0, 118, readNum (ccMaskBaseNumberParam, 110));
 
     const auto setInt = [] (juce::AudioParameterInt* p, int target)
@@ -345,6 +355,13 @@ void OrchNoteFilterAudioProcessor::handleControlCc (const juce::MidiMessage& mes
         const float target = value / 127.0f * 100.0f;
         if (probabilityFloat != nullptr && ! juce::approximatelyEqual (probabilityFloat->get(), target))
             *probabilityFloat = target;
+        matched = true;
+    }
+    else if (ccWidthN != 0 && cc == ccWidthN)
+    {
+        const float target = value / 127.0f; // 0..1
+        if (fieldWidthFloat != nullptr && ! juce::approximatelyEqual (fieldWidthFloat->get(), target))
+            *fieldWidthFloat = target;
         matched = true;
     }
     else if (ccPresetN != 0 && cc == ccPresetN)

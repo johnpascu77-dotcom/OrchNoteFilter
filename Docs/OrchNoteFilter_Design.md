@@ -184,3 +184,15 @@ wash tracks the structural voices automatically (MC-side, not scheduled).
   readout reflects the widened count.
 - Use: a sparse broadcast mask (e.g. a bare triad) gives the wash too few notes; nudge Width up for
   a fuller, still-in-key bed without hand-authoring a scale.
+- **CC-drivable**: `CC# Field Width` param (default **112**), so an MC ModulatorTarget can ride an
+  arc dimension - typically `tension` (high → wide/dense bed, low → tight to the motif set). Writes
+  the `fieldWidth` param like the other CC-mapped controls.
+
+## 16. Parameter order (2026-08-29)
+
+Parameters are declared "character first" (enable, preset, foreign mode, constrain dir, root, shift,
+width, morph, probability, avoid-snap) so Bitwig's automatic 8-per-page remote controls put the
+useful knobs on page 1. The 12 pitch-class toggles (normally driven by preset / the broadcast mask)
+and the CC-config numbers follow. VST3 param IDs are order-independent hashes, so host automation
+survives the reorder; only the remote-control page layout changes (re-add the device if a saved
+project keeps a stale mapping).

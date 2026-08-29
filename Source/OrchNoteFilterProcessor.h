@@ -79,6 +79,7 @@ private:
     std::atomic<float>* ccModeNumberParam = nullptr;
     std::atomic<float>* ccProbabilityNumberParam = nullptr;
     std::atomic<float>* ccFieldPresetNumberParam = nullptr;
+    std::atomic<float>* ccFieldWidthNumberParam = nullptr;
     std::atomic<float>* ccMaskBaseNumberParam = nullptr;
 
     // Typed handles for the parameters CC control writes back, so incoming CCs
@@ -89,6 +90,7 @@ private:
     juce::AudioParameterChoice* foreignModeChoice = nullptr;
     juce::AudioParameterInt* scaleDegreeShiftInt = nullptr;
     juce::AudioParameterFloat* probabilityFloat = nullptr;
+    juce::AudioParameterFloat* fieldWidthFloat = nullptr;
     std::array<juce::AudioParameterBool*, 12> pcBools { };
 
     juce::Random random;
