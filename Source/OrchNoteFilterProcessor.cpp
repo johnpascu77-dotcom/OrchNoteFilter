@@ -75,6 +75,15 @@ OrchNoteFilterAudioProcessor::OrchNoteFilterAudioProcessor()
     ccProbabilityNumberParam = parameters.getRawParameterValue ("ccProbabilityNumber");
     ccFieldPresetNumberParam = parameters.getRawParameterValue ("ccFieldPresetNumber");
 
+    fieldPresetChoice = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("fieldPreset"));
+    fieldRootInt = dynamic_cast<juce::AudioParameterInt*> (parameters.getParameter ("fieldRoot"));
+    foreignModeChoice = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("foreignMode"));
+    scaleDegreeShiftInt = dynamic_cast<juce::AudioParameterInt*> (parameters.getParameter ("scaleDegreeShift"));
+    probabilityFloat = dynamic_cast<juce::AudioParameterFloat*> (parameters.getParameter ("probability"));
+    for (int i = 0; i < 12; ++i)
+        pcBools[static_cast<size_t> (i)] =
+            dynamic_cast<juce::AudioParameterBool*> (parameters.getParameter ("pc" + juce::String (i)));
+
     resetNoteMap();
 }
 
@@ -191,9 +200,6 @@ void OrchNoteFilterAudioProcessor::resetNoteMap()
 
 int OrchNoteFilterAudioProcessor::effectiveProbability() const
 {
-    if (ccControlEngaged.load())
-        return juce::jlimit (0, 100, ccProbability.load());
-
     return probabilityParam != nullptr
         ? juce::jlimit (0, 100, juce::roundToInt (probabilityParam->load()))
         : 100;
@@ -201,36 +207,25 @@ int OrchNoteFilterAudioProcessor::effectiveProbability() const
 
 onft::FieldConfig OrchNoteFilterAudioProcessor::buildFieldConfig() const
 {
+    // CC control writes the parameters directly (handleControlCc), so this only
+    // ever reads params - no hidden override path.
     onft::FieldConfig config;
 
-    const bool cc = ccControlEngaged.load();
+    for (int i = 0; i < 12; ++i)
+        config.pitchClassAllowed[static_cast<size_t> (i)] =
+            pcParams[static_cast<size_t> (i)] != nullptr && pcParams[static_cast<size_t> (i)]->load() >= 0.5f;
 
-    if (cc && ccFieldMaskValid.load())
-    {
-        for (int i = 0; i < 12; ++i)
-            config.pitchClassAllowed[static_cast<size_t> (i)] = ccFieldMask[static_cast<size_t> (i)].load();
-    }
-    else
-    {
-        for (int i = 0; i < 12; ++i)
-            config.pitchClassAllowed[static_cast<size_t> (i)] =
-                pcParams[static_cast<size_t> (i)] != nullptr && pcParams[static_cast<size_t> (i)]->load() >= 0.5f;
-    }
+    config.root = fieldRootParam != nullptr ? juce::jlimit (0, 11, juce::roundToInt (fieldRootParam->load())) : 0;
 
-    config.root = cc ? juce::jlimit (0, 11, ccRoot.load())
-                     : (fieldRootParam != nullptr ? juce::jlimit (0, 11, juce::roundToInt (fieldRootParam->load())) : 0);
-
-    const int mode = cc ? juce::jlimit (0, 3, ccMode.load())
-                        : (foreignModeParam != nullptr ? juce::jlimit (0, 3, juce::roundToInt (foreignModeParam->load())) : 2);
+    const int mode = foreignModeParam != nullptr ? juce::jlimit (0, 3, juce::roundToInt (foreignModeParam->load())) : 2;
     config.foreignMode = static_cast<onft::ForeignMode> (mode);
 
     const int dir = constrainDirectionParam != nullptr
         ? juce::jlimit (0, 2, juce::roundToInt (constrainDirectionParam->load())) : 0;
     config.constrainDirection = static_cast<onft::ConstrainDirection> (dir);
 
-    config.scaleDegreeShift = cc
-        ? juce::jlimit (-12, 12, ccShift.load())
-        : (scaleDegreeShiftParam != nullptr ? juce::jlimit (-12, 12, juce::roundToInt (scaleDegreeShiftParam->load())) : 0);
+    config.scaleDegreeShift = scaleDegreeShiftParam != nullptr
+        ? juce::jlimit (-12, 12, juce::roundToInt (scaleDegreeShiftParam->load())) : 0;
 
     return config;
 }
@@ -251,26 +246,39 @@ void OrchNoteFilterAudioProcessor::handleControlCc (const juce::MidiMessage& mes
     const int ccProbN = readNum (ccProbabilityNumberParam, 109);
     const int ccPresetN = readNum (ccFieldPresetNumberParam, 105);
 
+    const auto setInt = [] (juce::AudioParameterInt* p, int target)
+    {
+        if (p != nullptr && p->get() != target)
+            *p = target;
+    };
+    const auto setChoice = [] (juce::AudioParameterChoice* p, int index)
+    {
+        if (p != nullptr && p->getIndex() != index)
+            *p = index;
+    };
+
     bool matched = false;
 
     if (ccRootN != 0 && cc == ccRootN)
     {
-        ccRoot.store (juce::roundToInt (value / 127.0f * 11.0f));
+        setInt (fieldRootInt, juce::roundToInt (value / 127.0f * 11.0f));
         matched = true;
     }
     else if (ccShiftN != 0 && cc == ccShiftN)
     {
-        ccShift.store (juce::roundToInt (value / 127.0f * 24.0f) - 12);
+        setInt (scaleDegreeShiftInt, juce::roundToInt (value / 127.0f * 24.0f) - 12);
         matched = true;
     }
     else if (ccModeN != 0 && cc == ccModeN)
     {
-        ccMode.store (bandedForeignMode (value));
+        setChoice (foreignModeChoice, bandedForeignMode (value));
         matched = true;
     }
     else if (ccProbN != 0 && cc == ccProbN)
     {
-        ccProbability.store (juce::roundToInt (value / 127.0f * 100.0f));
+        const float target = value / 127.0f * 100.0f;
+        if (probabilityFloat != nullptr && ! juce::approximatelyEqual (probabilityFloat->get(), target))
+            *probabilityFloat = target;
         matched = true;
     }
     else if (ccPresetN != 0 && cc == ccPresetN)
@@ -278,9 +286,16 @@ void OrchNoteFilterAudioProcessor::handleControlCc (const juce::MidiMessage& mes
         const int count = static_cast<int> (namedFields().size());
         const int index = juce::jlimit (0, count - 1, juce::roundToInt (value / 127.0f * (count - 1)));
         const auto& mask = namedFields()[static_cast<size_t> (index)].mask;
+
+        // Move the visible preset selector and the 12 toggles together.
+        setChoice (fieldPresetChoice, index + 1); // +1: choice index 0 is "Custom"
         for (int i = 0; i < 12; ++i)
-            ccFieldMask[static_cast<size_t> (i)].store (mask[static_cast<size_t> (i)]);
-        ccFieldMaskValid.store (true);
+        {
+            auto* p = pcBools[static_cast<size_t> (i)];
+            const bool want = mask[static_cast<size_t> (i)];
+            if (p != nullptr && p->get() != want)
+                *p = want;
+        }
         matched = true;
     }
 
@@ -454,6 +469,15 @@ bool OrchNoteFilterAudioProcessor::isCcControlActiveForUi() const
 {
     return (ccControlEnableParam != nullptr && ccControlEnableParam->load() >= 0.5f)
         && ccControlEngaged.load();
+}
+
+int OrchNoteFilterAudioProcessor::getActiveFieldSizeForUi() const
+{
+    int count = 0;
+    for (auto* p : pcParams)
+        if (p != nullptr && p->load() >= 0.5f)
+            ++count;
+    return count;
 }
 
 juce::AudioProcessorEditor* OrchNoteFilterAudioProcessor::createEditor()

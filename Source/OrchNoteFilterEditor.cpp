@@ -343,12 +343,14 @@ void OrchNoteFilterAudioProcessorEditor::updateStatus()
         text << "Perf: no notes yet";
     }
 
+    text << "   |   field: " << audioProcessor.getActiveFieldSizeForUi() << " pc";
+
     const int ksIn = audioProcessor.getLastKsInputNoteForUi();
     if (ksIn >= 0)
         text << "   |   KS: In " << ksIn << " -> " << audioProcessor.getLastKsOutputNoteForUi();
 
     if (audioProcessor.isCcControlActiveForUi())
-        text << "   |   CC: last CC" << audioProcessor.getLastControlCcForUi();
+        text << "   |   CC driving (last CC" << audioProcessor.getLastControlCcForUi() << ")";
     else if (audioProcessor.getParameters().getRawParameterValue ("ccControlEnable")->load() >= 0.5f)
         text << "   |   CC armed";
 

@@ -52,6 +52,7 @@ public:
     int getLastKsOutputNoteForUi() const { return lastKsOutputNote.load(); }
     bool isCcControlActiveForUi() const;
     int getLastControlCcForUi() const { return lastControlCc.load(); }
+    int getActiveFieldSizeForUi() const; // number of enabled pitch classes
 
 private:
     juce::AudioProcessorValueTreeState parameters;
@@ -76,16 +77,20 @@ private:
     std::atomic<float>* ccProbabilityNumberParam = nullptr;
     std::atomic<float>* ccFieldPresetNumberParam = nullptr;
 
+    // Typed handles for the parameters CC control writes back, so incoming CCs
+    // move the visible controls (and any host automation) rather than a hidden
+    // override. Guarded writes only fire on an actual value change.
+    juce::AudioParameterChoice* fieldPresetChoice = nullptr;
+    juce::AudioParameterInt* fieldRootInt = nullptr;
+    juce::AudioParameterChoice* foreignModeChoice = nullptr;
+    juce::AudioParameterInt* scaleDegreeShiftInt = nullptr;
+    juce::AudioParameterFloat* probabilityFloat = nullptr;
+    std::array<juce::AudioParameterBool*, 12> pcBools { };
+
     juce::Random random;
 
-    // CC-driven overrides (used only while ccControlEnable is on).
+    // Display-only: true once CC control has actually applied an incoming CC.
     std::atomic<bool> ccControlEngaged { false };
-    std::atomic<int> ccRoot { 0 };
-    std::atomic<int> ccShift { 0 };
-    std::atomic<int> ccMode { static_cast<int> (onft::ForeignMode::Constrain) };
-    std::atomic<int> ccProbability { 100 };
-    std::array<std::atomic<bool>, 12> ccFieldMask { };
-    std::atomic<bool> ccFieldMaskValid { false };
 
     std::atomic<int> lastPerfInputNote { -1 };
     std::atomic<int> lastPerfOutputNote { -1 };
