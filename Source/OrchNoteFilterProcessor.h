@@ -76,6 +76,7 @@ private:
     std::atomic<float>* ccModeNumberParam = nullptr;
     std::atomic<float>* ccProbabilityNumberParam = nullptr;
     std::atomic<float>* ccFieldPresetNumberParam = nullptr;
+    std::atomic<float>* ccMaskBaseNumberParam = nullptr;
 
     // Typed handles for the parameters CC control writes back, so incoming CCs
     // move the visible controls (and any host automation) rather than a hidden

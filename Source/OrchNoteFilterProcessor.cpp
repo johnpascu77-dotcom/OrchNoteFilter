@@ -74,6 +74,7 @@ OrchNoteFilterAudioProcessor::OrchNoteFilterAudioProcessor()
     ccModeNumberParam = parameters.getRawParameterValue ("ccModeNumber");
     ccProbabilityNumberParam = parameters.getRawParameterValue ("ccProbabilityNumber");
     ccFieldPresetNumberParam = parameters.getRawParameterValue ("ccFieldPresetNumber");
+    ccMaskBaseNumberParam = parameters.getRawParameterValue ("ccMaskBaseNumber");
 
     fieldPresetChoice = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("fieldPreset"));
     fieldRootInt = dynamic_cast<juce::AudioParameterInt*> (parameters.getParameter ("fieldRoot"));
@@ -157,6 +158,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchNoteFilterAudioProcessor
         juce::ParameterID { "ccModeNumber", 1 }, "CC# Mode", 0, 127, 108));
     params.push_back (std::make_unique<juce::AudioParameterInt>(
         juce::ParameterID { "ccProbabilityNumber", 1 }, "CC# Probability", 0, 127, 109));
+
+    // Motif pitch-class mask: 12 consecutive CCs from this base, one per pitch
+    // class (>= 64 = on). 0 = off. Lets MC broadcast the exact pitch classes its
+    // MotifEngine is writing so the wash tracks the structural voices.
+    params.push_back (std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID { "ccMaskBaseNumber", 1 }, "CC# Mask Base (0 = off)", 0, 116, 110));
 
     return { params.begin(), params.end() };
 }
@@ -245,6 +252,7 @@ void OrchNoteFilterAudioProcessor::handleControlCc (const juce::MidiMessage& mes
     const int ccModeN = readNum (ccModeNumberParam, 108);
     const int ccProbN = readNum (ccProbabilityNumberParam, 109);
     const int ccPresetN = readNum (ccFieldPresetNumberParam, 105);
+    const int ccMaskBase = juce::jlimit (0, 116, readNum (ccMaskBaseNumberParam, 110));
 
     const auto setInt = [] (juce::AudioParameterInt* p, int target)
     {
@@ -295,6 +303,19 @@ void OrchNoteFilterAudioProcessor::handleControlCc (const juce::MidiMessage& mes
             const bool want = mask[static_cast<size_t> (i)];
             if (p != nullptr && p->get() != want)
                 *p = want;
+        }
+        matched = true;
+    }
+    else if (ccMaskBase != 0 && cc >= ccMaskBase && cc <= ccMaskBase + 11)
+    {
+        // One pitch class of a broadcast motif mask.
+        const int pcIndex = cc - ccMaskBase;
+        const bool want = value >= 64;
+
+        if (auto* p = pcBools[static_cast<size_t> (pcIndex)]; p != nullptr && p->get() != want)
+        {
+            *p = want;
+            setChoice (fieldPresetChoice, 0); // the mask defines the field, not a named preset
         }
         matched = true;
     }
