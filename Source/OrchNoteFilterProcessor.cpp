@@ -39,6 +39,27 @@ namespace
         return fields;
     }
 
+    // Candidate scales for "Field Width" - every named field except Chromatic
+    // (a 12-note field is a trivial superset of everything and would just mean
+    // "add all notes", not "snap to a scale").
+    const std::vector<std::array<bool, 12>>& widenCandidateScales()
+    {
+        static const std::vector<std::array<bool, 12>> scales = []
+        {
+            std::vector<std::array<bool, 12>> out;
+            for (const auto& f : namedFields())
+            {
+                int count = 0;
+                for (bool b : f.mask)
+                    count += b ? 1 : 0;
+                if (count >= 3 && count <= 10)
+                    out.push_back (f.mask);
+            }
+            return out;
+        }();
+        return scales;
+    }
+
     int bandedForeignMode (int ccValue)
     {
         const int v = juce::jlimit (0, 127, ccValue);
@@ -63,6 +84,7 @@ OrchNoteFilterAudioProcessor::OrchNoteFilterAudioProcessor()
     scaleDegreeShiftParam = parameters.getRawParameterValue ("scaleDegreeShift");
     avoidSnapRepeatsParam = parameters.getRawParameterValue ("avoidSnapRepeats");
     fieldMorphNotesParam = parameters.getRawParameterValue ("fieldMorphNotes");
+    fieldWidthParam = parameters.getRawParameterValue ("fieldWidth");
     probabilityParam = parameters.getRawParameterValue ("probability");
     passKeyswitchesParam = parameters.getRawParameterValue ("passKeyswitches");
     keyswitchMinParam = parameters.getRawParameterValue ("keyswitchMin");
@@ -135,6 +157,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout OrchNoteFilterAudioProcessor
 
     params.push_back (std::make_unique<juce::AudioParameterInt>(
         juce::ParameterID { "fieldMorphNotes", 1 }, "Field Morph (notes)", 0, 128, 0));
+
+    // Field Width: 0 = use the field exactly, 1 = widen it to the nearest
+    // whole scale, in between = that fraction of the scale's extra notes.
+    params.push_back (std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "fieldWidth", 1 }, "Field Width",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.0f));
 
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "probability", 1 }, "Probability",
@@ -217,15 +245,33 @@ int OrchNoteFilterAudioProcessor::effectiveProbability() const
         : 100;
 }
 
+std::array<bool, 12> OrchNoteFilterAudioProcessor::rawFieldMask() const
+{
+    std::array<bool, 12> mask { };
+    for (int i = 0; i < 12; ++i)
+        mask[static_cast<size_t> (i)] =
+            pcParams[static_cast<size_t> (i)] != nullptr && pcParams[static_cast<size_t> (i)]->load() >= 0.5f;
+    return mask;
+}
+
+std::array<bool, 12> OrchNoteFilterAudioProcessor::applyFieldWidth (const std::array<bool, 12>& mask) const
+{
+    const float width = fieldWidthParam != nullptr
+        ? juce::jlimit (0.0f, 1.0f, fieldWidthParam->load()) : 0.0f;
+
+    if (width <= 0.0f)
+        return mask;
+
+    return onft::widenFieldToScale (mask, width, widenCandidateScales());
+}
+
 onft::FieldConfig OrchNoteFilterAudioProcessor::buildFieldConfig() const
 {
     // CC control writes the parameters directly (handleControlCc), so this only
     // ever reads params - no hidden override path.
     onft::FieldConfig config;
 
-    for (int i = 0; i < 12; ++i)
-        config.pitchClassAllowed[static_cast<size_t> (i)] =
-            pcParams[static_cast<size_t> (i)] != nullptr && pcParams[static_cast<size_t> (i)]->load() >= 0.5f;
+    config.pitchClassAllowed = applyFieldWidth (rawFieldMask());
 
     config.root = fieldRootParam != nullptr ? juce::jlimit (0, 11, juce::roundToInt (fieldRootParam->load())) : 0;
 
@@ -245,7 +291,7 @@ onft::FieldConfig OrchNoteFilterAudioProcessor::buildFieldConfig() const
 onft::FieldConfig OrchNoteFilterAudioProcessor::buildFieldConfigWithMask (const std::array<bool, 12>& mask) const
 {
     auto config = buildFieldConfig();
-    config.pitchClassAllowed = mask;
+    config.pitchClassAllowed = applyFieldWidth (mask);
     return config;
 }
 
@@ -583,9 +629,12 @@ bool OrchNoteFilterAudioProcessor::isCcControlActiveForUi() const
 
 int OrchNoteFilterAudioProcessor::getActiveFieldSizeForUi() const
 {
+    // Effective field: the toggles as widened by Field Width, so the readout
+    // matches what actually filters notes.
+    const auto effective = applyFieldWidth (rawFieldMask());
     int count = 0;
-    for (auto* p : pcParams)
-        if (p != nullptr && p->load() >= 0.5f)
+    for (bool on : effective)
+        if (on)
             ++count;
     return count;
 }

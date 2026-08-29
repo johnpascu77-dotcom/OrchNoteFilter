@@ -67,6 +67,7 @@ private:
     std::atomic<float>* scaleDegreeShiftParam = nullptr;
     std::atomic<float>* avoidSnapRepeatsParam = nullptr;
     std::atomic<float>* fieldMorphNotesParam = nullptr;
+    std::atomic<float>* fieldWidthParam = nullptr;
     std::atomic<float>* probabilityParam = nullptr;
     std::atomic<float>* passKeyswitchesParam = nullptr;
     std::atomic<float>* keyswitchMinParam = nullptr;
@@ -136,6 +137,11 @@ private:
     onft::FieldConfig buildFieldConfig() const;
     onft::FieldConfig buildFieldConfigWithMask (const std::array<bool, 12>& mask) const;
     int effectiveProbability() const;
+
+    // The 12 pc toggles as a bare mask, and that mask after the Field Width
+    // knob widens it toward the nearest scale (identity when the knob is 0).
+    std::array<bool, 12> rawFieldMask() const;
+    std::array<bool, 12> applyFieldWidth (const std::array<bool, 12>& mask) const;
 
     void resetNoteMap();
     void handleControlCc (const juce::MidiMessage& message);

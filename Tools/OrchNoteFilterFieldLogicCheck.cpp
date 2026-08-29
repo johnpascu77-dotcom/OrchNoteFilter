@@ -3,6 +3,7 @@
 #include <array>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -142,6 +143,42 @@ int main()
         wt.scaleDegreeShift = 1;
         checkNote (onft::resolveNote (60, wt).outputNote, 62, "whole-tone shift +1: C60 -> D62");
         checkNote (onft::resolveNote (70, wt).outputNote, 72, "whole-tone shift +1: A#70 -> C72 (wrap)");
+    }
+
+    // Field Width: widen a triad toward the nearest 7-note scale.
+    {
+        std::array<bool, 12> triad { };            // C E G
+        for (int pc : { 0, 4, 7 })
+            triad[static_cast<size_t> (pc)] = true;
+
+        const std::vector<std::array<bool, 12>> scales = {
+            [] { std::array<bool, 12> m { }; for (int pc : { 0,2,4,5,7,9,11 }) m[(size_t) pc] = true; return m; }(), // C major
+            [] { std::array<bool, 12> m { }; for (int pc : { 0,2,4,6,8,10 })   m[(size_t) pc] = true; return m; }(), // whole tone
+        };
+
+        auto count = [] (const std::array<bool, 12>& f)
+        { int n = 0; for (bool b : f) n += b ? 1 : 0; return n; };
+
+        // width 0 -> untouched
+        check (onft::widenFieldToScale (triad, 0.0f, scales) == triad, "field width 0 leaves the field exact");
+
+        // width 1 -> full best-fit scale (C major contains C E G with 0 missing)
+        const auto full = onft::widenFieldToScale (triad, 1.0f, scales);
+        check (count (full) == 7 && full[0] && full[2] && full[4] && full[5] && full[7] && full[9] && full[11],
+               "field width 1 snaps {C,E,G} to the C-major scale");
+
+        // partial -> between the two sizes, and never drops an original member
+        const auto half = onft::widenFieldToScale (triad, 0.5f, scales);
+        check (count (half) > 3 && count (half) < 7, "field width 0.5 is a partial widen");
+        check (half[0] && half[4] && half[7], "field width keeps the original pitch classes");
+
+        // furthest-first ordering: D and A (whole-tone away) come in before F and B (semitone away)
+        check (half[2] && half[9] && ! half[5] && ! half[11],
+               "field width adds gentle extensions (D, A) before semitone neighbours (F, B)");
+
+        // empty field -> nothing to anchor, returned unchanged
+        std::array<bool, 12> emptyMask { };
+        check (onft::widenFieldToScale (emptyMask, 1.0f, scales) == emptyMask, "field width no-ops on an empty field");
     }
 
     std::cout << "----------------------------\n";

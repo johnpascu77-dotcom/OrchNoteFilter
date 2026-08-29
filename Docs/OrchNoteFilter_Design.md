@@ -166,7 +166,21 @@ wash tracks the structural voices automatically (MC-side, not scheduled).
 - So an OrchNoteFilter with `CC# Mask Base` matching MC's Base CC and CC Control on constrains its wash to the
   composition's own live harmony. Set Foreign Notes to **Filter** for the emergent-rhythm version,
   **Constrain** for dense lock, **Solo** for a section that diverges against the subject.
-- **Not yet applied on the MC side**: pattern inversion / M7 (they change the pitch-class set;
-  transpose is the dominant shift and is applied). A documented refinement.
+- MC side applies the pattern's **M7 / Inversion / Transpose** to the mask in pitch-class space
+  (matching MPL's own transform order), so an inverted or M7'd subject reports its real sounding set.
 - **Conflict**: don't wire both OrchConductor's `pitchFieldIndex` CC105 path *and* MC's packed mask
   into the same OrchNoteFilter — pick one field authority per instance.
+
+## 15. Field Width (2026-08-29)
+
+- **`Field Width`** float param, 0..1, default 0. `0` = use the field (toggles or mask) exactly;
+  `1` = widen it to the nearest whole scale; in between = that fraction of the scale's extra notes.
+- `onft::widenFieldToScale` (pure logic, tested): searches every rotation of every named field
+  except Chromatic, picks the one that covers the most field notes with the fewest extras, then adds
+  the scale's extra pitch classes **furthest-first** by semitone distance to the nearest field member
+  (9ths/6ths before semitone neighbours). The field's own pitch classes are always kept.
+- Applied inside `buildFieldConfig` / `buildFieldConfigWithMask` as a read-time transform — it does
+  **not** rewrite the 12 toggles (that would double-apply on the next read). The "field: N pc" status
+  readout reflects the widened count.
+- Use: a sparse broadcast mask (e.g. a bare triad) gives the wash too few notes; nudge Width up for
+  a fuller, still-in-key bed without hand-authoring a scale.

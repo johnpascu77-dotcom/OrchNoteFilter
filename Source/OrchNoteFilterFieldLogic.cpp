@@ -166,4 +166,101 @@ namespace onft
 
         return { true, note };
     }
+
+    std::array<bool, 12> widenFieldToScale(const std::array<bool, 12>& field,
+                                           float width,
+                                           const std::vector<std::array<bool, 12>>& candidateScales)
+    {
+        if (width < 0.0f) width = 0.0f;
+        if (width > 1.0f) width = 1.0f;
+        if (width <= 0.0f || candidateScales.empty())
+            return field;
+
+        int fieldCount = 0;
+        for (bool b : field)
+            fieldCount += b ? 1 : 0;
+
+        if (fieldCount == 0 || fieldCount >= 12)
+            return field; // nothing to anchor to, or already full
+
+        // Best fit over every rotation of every candidate scale: minimise the
+        // field notes the scale fails to cover, then minimise the scale's own
+        // extra notes (tightest superset wins).
+        std::array<bool, 12> best { };
+        int bestScore = -1;
+
+        for (const auto& scale : candidateScales)
+        {
+            int scaleCount = 0;
+            for (bool b : scale)
+                scaleCount += b ? 1 : 0;
+
+            if (scaleCount == 0)
+                continue;
+
+            for (int rot = 0; rot < 12; ++rot)
+            {
+                std::array<bool, 12> rotated { };
+                for (int i = 0; i < 12; ++i)
+                    rotated[static_cast<size_t>(i)] = scale[static_cast<size_t>(mod12(i - rot))];
+
+                int missing = 0;
+                int extra = 0;
+                for (int i = 0; i < 12; ++i)
+                {
+                    const bool inField = field[static_cast<size_t>(i)];
+                    const bool inScale = rotated[static_cast<size_t>(i)];
+                    if (inField && ! inScale) ++missing;
+                    if (! inField && inScale) ++extra;
+                }
+
+                const int score = missing * 100 + extra;
+                if (bestScore < 0 || score < bestScore)
+                {
+                    bestScore = score;
+                    best = rotated;
+                }
+            }
+        }
+
+        if (bestScore < 0)
+            return field;
+
+        // Pitch classes the best-fit scale adds, ordered furthest-first by
+        // semitone distance to the nearest field member - gentle extensions
+        // (9ths, 6ths) come in before semitone neighbours - tie-break ascending.
+        struct Extra { int pc; int dist; };
+        std::array<Extra, 12> extras { };
+        int numExtras = 0;
+
+        for (int i = 0; i < 12; ++i)
+        {
+            if (field[static_cast<size_t>(i)] || ! best[static_cast<size_t>(i)])
+                continue;
+
+            int nearest = 12;
+            for (int j = 0; j < 12; ++j)
+            {
+                if (! field[static_cast<size_t>(j)])
+                    continue;
+                const int raw = std::abs(i - j);
+                nearest = std::min(nearest, std::min(raw, 12 - raw));
+            }
+
+            extras[static_cast<size_t>(numExtras++)] = { i, nearest };
+        }
+
+        std::sort(extras.begin(), extras.begin() + numExtras,
+                  [](const Extra& a, const Extra& b)
+                  { return a.dist != b.dist ? a.dist > b.dist : a.pc < b.pc; });
+
+        int include = static_cast<int>(width * static_cast<float>(numExtras) + 0.5f);
+        if (include > numExtras) include = numExtras;
+
+        std::array<bool, 12> out = field;
+        for (int k = 0; k < include; ++k)
+            out[static_cast<size_t>(extras[static_cast<size_t>(k)].pc)] = true;
+
+        return out;
+    }
 }

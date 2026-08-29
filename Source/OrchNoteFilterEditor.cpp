@@ -36,8 +36,8 @@ OrchNoteFilterAudioProcessorEditor::OrchNoteFilterAudioProcessorEditor (OrchNote
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
     setResizable (true, true);
-    setResizeLimits (600, 590, 1100, 980);
-    setSize (720, 700);
+    setResizeLimits (600, 622, 1100, 1020);
+    setSize (720, 732);
 
     auto& params = audioProcessor.getParameters();
 
@@ -155,6 +155,21 @@ OrchNoteFilterAudioProcessorEditor::OrchNoteFilterAudioProcessorEditor (OrchNote
     styleSlider (fieldMorphSlider);
     addAndMakeVisible (fieldMorphSlider);
     fieldMorphAttachment = std::make_unique<SliderAttachment> (params, "fieldMorphNotes", fieldMorphSlider);
+
+    fieldWidthLabel.setText ("Field Width", juce::dontSendNotification);
+    styleLabel (fieldWidthLabel, 13.0f, true);
+    addAndMakeVisible (fieldWidthLabel);
+    fieldWidthSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    fieldWidthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 22);
+    fieldWidthSlider.textFromValueFunction = [] (double v)
+    {
+        return v <= 0.0005 ? juce::String ("exact")
+             : v >= 0.9995 ? juce::String ("scale")
+             : juce::String (juce::roundToInt (v * 100.0)) + "%";
+    };
+    styleSlider (fieldWidthSlider);
+    addAndMakeVisible (fieldWidthSlider);
+    fieldWidthAttachment = std::make_unique<SliderAttachment> (params, "fieldWidth", fieldWidthSlider);
 
     probabilityLabel.setText ("Probability", juce::dontSendNotification);
     styleLabel (probabilityLabel, 13.0f, true);
@@ -296,6 +311,12 @@ void OrchNoteFilterAudioProcessorEditor::resized()
         auto row = area.removeFromTop (26);
         fieldMorphLabel.setBounds (row.removeFromLeft (150));
         fieldMorphSlider.setBounds (row.removeFromLeft (row.getWidth()));
+    }
+    area.removeFromTop (6);
+    {
+        auto row = area.removeFromTop (26);
+        fieldWidthLabel.setBounds (row.removeFromLeft (150));
+        fieldWidthSlider.setBounds (row.removeFromLeft (row.getWidth()));
     }
     area.removeFromTop (6);
     {

@@ -61,4 +61,15 @@ namespace onft
 
     // Resolve one input MIDI note (0..127) against the field.
     FieldResult resolveNote(int inputNote, const FieldConfig& config);
+
+    // "Field Width": widen `field` toward the best-fitting scale drawn from
+    // `candidateScales` (each a 12-bool pitch-class mask, any rotation - the
+    // search tries all 12). width 0 returns `field` untouched; width 1 adds
+    // every pitch class of the best-fit scale; in between adds that fraction of
+    // the scale's extra notes, furthest-from-the-field first. The field's own
+    // pitch classes are always kept, so the result is never smaller than the
+    // input. Deterministic; safe to call per note.
+    std::array<bool, 12> widenFieldToScale(const std::array<bool, 12>& field,
+                                           float width,
+                                           const std::vector<std::array<bool, 12>>& candidateScales);
 }

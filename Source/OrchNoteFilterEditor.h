@@ -47,6 +47,8 @@ private:
 
     juce::Label fieldMorphLabel;
     juce::Slider fieldMorphSlider;
+    juce::Label fieldWidthLabel;
+    juce::Slider fieldWidthSlider;
 
     juce::Label probabilityLabel;
     juce::Slider probabilitySlider;
@@ -74,6 +76,7 @@ private:
     std::unique_ptr<SliderAttachment> shiftAttachment;
     std::unique_ptr<ButtonAttachment> avoidSnapRepeatsAttachment;
     std::unique_ptr<SliderAttachment> fieldMorphAttachment;
+    std::unique_ptr<SliderAttachment> fieldWidthAttachment;
     std::unique_ptr<SliderAttachment> probabilityAttachment;
     std::unique_ptr<ButtonAttachment> passKeyswitchesAttachment;
     std::unique_ptr<SliderAttachment> ksMinAttachment;
