@@ -10,7 +10,7 @@ juce_add_plugin(OrchNoteFilter
     PLUGIN_MANUFACTURER_CODE Jpas
     PLUGIN_CODE Onft
 
-    FORMATS VST3
+    FORMATS VST3 Standalone
 
     PRODUCT_NAME "OrchNoteFilter"
     PLUGIN_NAME "OrchNoteFilter"
